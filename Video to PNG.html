@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video to PNG Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* General Styles */
+      body {
+        font-family: "Poppins", sans-serif;
+        background-color: #f4f7f6;
+        color: #333;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+
+      h1 {
+        color: #333;
+        text-align: center;
+        margin-bottom: 20px;
+      }
+
+      p {
+        font-size: 16px;
+        text-align: center;
+        margin-bottom: 10px;
+      }
+
+      /* Container Styling */
+      .container {
+        background-color: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        width: 80%;
+        max-width: 800px;
+        text-align: center;
+      }
+
+      .container input[type="file"],
+      .container input[type="number"] {
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 16px;
+        width: 100%;
+        max-width: 300px;
+      }
+
+      .container input[type="number"] {
+        width: auto;
+        max-width: 100px;
+      }
+
+      /* Button Styling */
+      #startBtn,
+      #downloadBtn {
+        background-color: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        margin-top: 20px;
+      }
+
+      #startBtn:hover,
+      #downloadBtn:hover {
+        background-color: #45a049;
+      }
+
+      /* Progress Bar */
+      progress {
+        width: 100%;
+        height: 20px;
+        margin-top: 20px;
+        border-radius: 10px;
+        appearance: none;
+      }
+
+      progress::-webkit-progress-bar {
+        background-color: #eee;
+        border-radius: 10px;
+      }
+
+      progress::-webkit-progress-value {
+        background-color: #4caf50;
+        border-radius: 10px;
+      }
+
+      /* Image Grid Styling */
+      #images {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      #images img {
+        width: 100%;
+        height: auto;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      #images img:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Interval Display */
+      #intervalDisplay {
+        font-weight: bold;
+      }
+
+      /* Responsive Styles */
+      @media (max-width: 768px) {
+        #images {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        #startBtn,
+        #downloadBtn {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 480px) {
+        #images {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Video to PNG Converter</h1>
+      <p>
+        Upload a video, and we will extract one PNG image at your specified
+        interval.
+      </p>
+      <button id="switchToVideo" onclick="window.location.href = 'index.html';">
+        Switch to PNG to Video Converter
+      </button>
+
+      <!-- Interval input -->
+      <label for="intervalInput">Change interval (seconds):</label>
+      <input type="number" id="intervalInput" value="3" min="1" />
+      <br /><br />
+
+      <!-- Video Upload -->
+      <input type="file" id="videoFile" accept="video/*" />
+      <br /><br />
+
+      <!-- Display Video Preview (thumbnail) -->
+      <div id="videoPreview" style="display: none">
+        <h3>Video Preview</h3>
+        <img id="videoThumbnail" style="max-width: 100%; border-radius: 8px" />
+      </div>
+      <br />
+
+      <!-- Display Progress Bar -->
+      <progress id="progressBar" value="0" max="100"></progress>
+      <br />
+
+      <!-- Start Button -->
+      <button id="startBtn" style="display: none">Start Extraction</button>
+
+      <!-- Download Button -->
+      <button id="downloadBtn" style="display: none">
+        Download All Images
+      </button>
+      <br />
+
+      <!-- Image Grid (Not used for showing images, only for zip creation) -->
+      <div id="images"></div>
+    </div>
+
+    <script>
+      let captureInProgress = false; // Prevent overlapping frame captures
+      let zip = new JSZip(); // Create a JSZip instance to store the images
+      let imgCount = 0; // Count to track number of images added to the zip file
+      let totalFrames = 0; // Track the total number of frames to be captured
+
+      let videoElement = document.createElement("video");
+      let canvas = document.createElement("canvas");
+      let ctx = canvas.getContext("2d");
+
+      // Handle the video file upload
+      document
+        .getElementById("videoFile")
+        .addEventListener("change", function (event) {
+          const file = event.target.files[0];
+          if (file && file.type.startsWith("video/")) {
+            const url = URL.createObjectURL(file);
+            videoElement.src = url;
+            videoElement.style.display = "none"; // Hide the video element
+            videoElement.load();
+
+            // Capture the frame at the 10-second mark and display it as a thumbnail
+            videoElement.addEventListener("loadeddata", function () {
+              // Seek to the 10-second mark
+              videoElement.currentTime = 10;
+
+              // Wait for the 10-second frame to load
+              videoElement.addEventListener("seeked", function () {
+                canvas.width = videoElement.videoWidth;
+                canvas.height = videoElement.videoHeight;
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+                const img = document.getElementById("videoThumbnail");
+                img.src = canvas.toDataURL("image/png");
+
+                // Display the video preview
+                document.getElementById("videoPreview").style.display = "block";
+                document.getElementById("startBtn").style.display = "inline"; // Show Start button
+              });
+            });
+          } else {
+            alert("Please upload a valid video file");
+          }
+        });
+
+      // Start the frame extraction when Start button is clicked
+      document
+        .getElementById("startBtn")
+        .addEventListener("click", function () {
+          const intervalInput = document.getElementById("intervalInput");
+          const progressBar = document.getElementById("progressBar");
+
+          let interval = parseInt(intervalInput.value, 10);
+          const totalDuration = videoElement.duration;
+          let currentTime = 0;
+          totalFrames = Math.floor(totalDuration / interval); // Calculate total frames to be captured
+          progressBar.max = totalFrames; // Set the max value of progress bar to total frames
+
+          // Function to capture and store frames in ZIP
+          function captureFrames() {
+            if (captureInProgress) return; // Prevent overlapping captures
+            captureInProgress = true; // Mark as in progress
+
+            const captureFrame = function () {
+              if (currentTime <= totalDuration) {
+                videoElement.currentTime = currentTime;
+
+                // Use a setTimeout to wait for the video to seek and capture the frame
+                setTimeout(() => {
+                  // Draw the current frame on the canvas
+                  canvas.width = videoElement.videoWidth;
+                  canvas.height = videoElement.videoHeight;
+                  ctx.drawImage(
+                    videoElement,
+                    0,
+                    0,
+                    canvas.width,
+                    canvas.height
+                  );
+
+                  // Add the image to the zip file (do not display it)
+                  const imgData = canvas.toDataURL("image/png").split(",")[1]; // Get image data
+                  zip.file(`image_${imgCount}.png`, imgData, { base64: true });
+                  imgCount++;
+
+                  // Update progress bar
+                  progressBar.value = Math.floor(currentTime / interval);
+
+                  // Move to the next frame
+                  currentTime += interval;
+
+                  // Continue if there's more time
+                  if (currentTime < totalDuration) {
+                    captureFrame();
+                  } else {
+                    // Finalize the process
+                    document.getElementById("downloadBtn").style.display =
+                      "inline";
+                    captureInProgress = false;
+                  }
+                }, 100); // Small delay to allow seeking time
+              }
+            };
+
+            captureFrame(); // Start the capture process
+          }
+
+          // Start capturing the frames
+          captureFrames();
+        });
+
+      // Handle the download of the ZIP file
+      document
+        .getElementById("downloadBtn")
+        .addEventListener("click", function () {
+          zip.generateAsync({ type: "blob" }).then(function (content) {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(content);
+            link.download = "video_frames.zip";
+            link.click();
+          });
+        });
+    </script>
+  </body>
+</html>
